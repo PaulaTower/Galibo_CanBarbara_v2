@@ -3,25 +3,28 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Portus Total | Bahía de Palma</title>
+  <title>Gálibo disponible | Dársena Can Barbará</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="shell">
-    <header class="hero" style="background-image: url('/static/canbarbara.jpg'); background-size: cover; background-position: center; position: relative;">
-      <div style="position:absolute; inset:0; background:rgba(10,40,80,0.65); border-radius: inherit;"></div>
-      <div style="position:relative; z-index:1;">
-        <p class="eyebrow">PORTUS · PALMA 3851 · ECMWF IFS</p>
-        <h1>Nivel total del mar · Bahía de Palma</h1>
-        <p class="subtitle">Marea astronómica + marea meteorológica + comparación con mareógrafo real.</p>
+  <header class="hero" style="background-image: url('/static/canbarbara.jpg'); background-size: cover; background-position: center; position: relative; min-height: 220px;">
+    <div style="position:absolute; inset:0; background:rgba(10,40,80,0.65); border-radius: inherit;"></div>
+    <div style="position:relative; z-index:1; display:flex; align-items:center; gap:24px;">
+      <img src="/static/logoAPB.jpg" alt="Autoritat Portuària de Balears" style="height:110px; width:auto; border-radius:6px;">
+      <div>       
+        <h1>Gálibo disponible · </h1>
+        <p><h1>Dársena de Can Barbará</h1></p>
+        <p class="subtitle">Predicción del nivel del mar total y comparación con mareógrafo real.</p>
       </div>
-      <div class="brand-card" style="position:relative; z-index:1;">
-        <span class="live-dot"></span>
-        <span id="generatedAt">Calculando...</span>
-      </div>
-    </header>
+  </div>
+  <div class="brand-card" style="position:relative; z-index:1;">
+    <span class="live-dot"></span>
+    <span id="generatedAt">Calculando...</span>
+  </div>
+</header>
 
     <section id="loader" class="loader-card">
       <div class="loader-top">
@@ -124,11 +127,21 @@
       </section>
     </main>
 
-    <footer class="aviso-legal">
-      <p><strong>IMPORTANTE</strong></p>
-      <p>Los valores de gálibo mostrados son <em>orientativos</em> y se basan en una previsión sujeta a <em>incertidumbre</em>.</p>
-      <p>La decisión final sobre el paso de la embarcación es <strong>responsabilidad exclusiva del patrón</strong>, quien debe valorar el air draft de su embarcación, las condiciones meteorológicas y marítimas del momento, así como cualquier otro factor relevante para la maniobra.</p>
+     <footer class="aviso-legal">
+      <p><strong>⚠️ AVISO IMPORTANTE</strong></p>
+      <ul style="padding-left:1.2rem; margin:0.6rem 0;">
+        <li> Los valores de gálibo son <em>orientativos</em>, basados en una previsión sujeta a <em>incertidumbre</em>, con <u>errores típicos en torno a los 5 cm</u>.</li>
+        <li> La decisión final es <strong>responsabilidad exclusiva del patrón</strong>, quien debe valorar el air draft, las condiciones meteorológicas y marítimas, y cualquier otro factor relevante.</li>
+        <li> <strong>Atención ante rissagues:</strong> si se produce una rissaga, su efecto puede aparecer reflejado parcialmente en la componente meteorológica y en el mareógrafo. En condiciones extremas o cambios rápidos de presión, los errores pueden ser mayores.</li>
+        <li> Consulte siempre el parte oficial de <strong>Puertos del Estado</strong> y el <strong>Servicio de Seguridad Marítima</strong>.</li>
+      </ul>
     </footer>
+      <div class="mcvalnera-credit">
+      <img src="/static/mcvalnera.jpg" alt="MCVALNERA" style="height:60px; width:auto;">
+      <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+        <span>Herramienta desarrollada por <strong>MCVALNERA</strong></span>
+        <p style="margin:0; font-size:11px; letter-spacing:.12em; font-weight:700; opacity:.7;">PORTUS · Mareógrafo: PALMA 3851 · ECMWF IFS</p>
+      </div>
 
   </div>
 
