@@ -1,13 +1,42 @@
-"""
-Actualiza los datos operativos para Portus Total Operativo.
-"""
-import sys
-from pathlib import Path
+name: Update operational data
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+on:
+  schedule:
+    # ECMWF en este proyecto se usa con PASO_H=3, así que actualizamos cada 3 horas.
+    - cron: "20 */3 * * *"
+  workflow_dispatch:
 
-from app import build_operational_dataset
+permissions:
+  contents: write
 
-if __name__ == "__main__":
-    build_operational_dataset("github-action")
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libeccodes0
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate latest operational data
+        run: python scripts/update_data.py
+
+      - name: Commit processed data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/processed/latest.json data/processed/nivel_total_ultimo.csv data/processed/forcing_ecmwf_ultimo.csv
+          git commit -m "Update operational data" || echo "No processed data changes"
+          git push
