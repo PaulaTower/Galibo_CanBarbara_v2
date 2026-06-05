@@ -8,39 +8,39 @@ import threading
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-
+ 
 LOCAL_TZ = ZoneInfo("Europe/Madrid")
-
+ 
 import numpy as np
 import pandas as pd
 import requests
 from flask import Flask, jsonify, render_template
-
+ 
 try:
     from scipy.interpolate import PchipInterpolator
 except Exception:
     PchipInterpolator = None
-
+ 
 app = Flask(__name__)
-
+ 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 ASTRO_PATH = DATA_DIR / "astro" / "astro_CAMINO_A_2026_2050_CeroREDMAR.csv"
 ECMWF_CACHE_DIR = DATA_DIR / "cache" / "ecmwf"
 PORTUS_CACHE_DIR = DATA_DIR / "cache" / "portus"
 PROCESSED_DIR = DATA_DIR / "processed"
-
+ 
 for d in [ECMWF_CACHE_DIR, PORTUS_CACHE_DIR, PROCESSED_DIR]:
     d.mkdir(parents=True, exist_ok=True)
-
+ 
 # ----------------- CONFIGURACIÓN OPERATIVA -----------------
 PUNTO_LAT = float(os.getenv("PUNTO_LAT", "39.55"))
 PUNTO_LON = float(os.getenv("PUNTO_LON", "2.63"))
-
+ 
 HORIZONTE_FC_H = int(os.getenv("HORIZONTE_FC_H", "120"))
 PASO_H = int(os.getenv("PASO_H", "3"))
 N_DIAS_HISTORICO = int(os.getenv("N_DIAS_HISTORICO", "3"))
-
+ 
 A_U = float(os.getenv("A_U", "0.0"))
 A_V = float(os.getenv("A_V", "3.5e-4"))
 K_IB = float(os.getenv("K_IB", "0.93"))
@@ -48,53 +48,86 @@ ALPHA = float(os.getenv("ALPHA", "0.9"))
 P_REF = float(os.getenv("P_REF", "1015.5"))
 COTA_GALIBO_ENTRADA_M = float(os.getenv("COTA_GALIBO_ENTRADA_M", "1.483"))
 COTA_GALIBO_SALIDA_M = float(os.getenv("COTA_GALIBO_SALIDA_M", "1.474"))
-
+ 
 PORTUS_API_BASE = "https://poem.puertos.es/portus/ObservedHourlyLevel"
 PORTUS_STATION_CODE = 3851
 DATUM_OFFSET_MM = -107
-
+ 
 JOBS = {}
 LOCK = threading.Lock()
-
-
+ 
+ 
 def set_job(job_id, **kwargs):
     with LOCK:
         JOBS.setdefault(job_id, {}).update(kwargs)
-
-
+ 
+ 
 def get_job(job_id):
     with LOCK:
         return dict(JOBS.get(job_id, {}))
-
-
+ 
+ 
 def stage(job_id, progress, message):
     set_job(job_id, progress=progress, message=message)
     time.sleep(0.2)
-
-
+ 
+ 
 def utc_now_floor():
     return datetime.now(LOCAL_TZ).replace(minute=0, second=0, microsecond=0, tzinfo=None)
-
-
+ 
+ 
 # ----------------- ECMWF -----------------
+import random
+ 
+ 
+def _ecmwf_retrieve_con_backoff(client, params, max_intentos=6):
+    """
+    Envuelve client.retrieve() con reintentos y backoff exponencial.
+    Maneja el HTTP 503 'SlowDown' que devuelve el S3 de ECMWF cuando se
+    supera el límite de tasa. Esperas: ~60s, 120s, 240s, 480s, 960s.
+    """
+    target = params.get("target")
+    for intento in range(1, max_intentos + 1):
+        # borrar fichero parcial de un intento previo fallido
+        if target and os.path.exists(target):
+            try:
+                os.remove(target)
+            except OSError:
+                pass
+        try:
+            client.retrieve(**params)
+            return
+        except Exception as e:
+            es_slowdown = any(s in str(e) for s in ("503", "SlowDown", "Slow Down"))
+            if es_slowdown and intento < max_intentos:
+                espera = min(60 * (2 ** (intento - 1)), 960) + random.uniform(0, 30)
+                print(
+                    f"[ECMWF] SlowDown en step {params.get('step', '?')}h "
+                    f"(intento {intento}/{max_intentos}). Reintento en {espera:.0f}s..."
+                )
+                time.sleep(espera)
+            else:
+                raise
+ 
+ 
 def descargar_ecmwf(job_id):
     """
     Descarga el último run ECMWF Open Data.
     Si hay problemas con cfgrib/ecCodes o red, usa el último CSV procesado disponible.
     """
     stage(job_id, 10, "Consultando último run ECMWF disponible...")
-
+ 
     try:
         from ecmwf.opendata import Client
         import cfgrib
         import xarray as xr
     except Exception as e:
         raise RuntimeError(f"No están disponibles ecmwf-opendata/cfgrib/xarray: {e}")
-
+ 
     mirrors = ["aws", "azure", "ecmwf"]
     latest = None
     mirror_ok = None
-
+ 
     for mirror in mirrors:
         try:
             client = Client(source=mirror)
@@ -103,34 +136,36 @@ def descargar_ecmwf(job_id):
             break
         except Exception:
             continue
-
+ 
     if latest is None:
         raise RuntimeError("No se pudo obtener el último run ECMWF.")
-
+ 
     fecha_run = latest.strftime("%Y%m%d")
     hora_run = latest.strftime("%H%M")
     steps = list(range(0, HORIZONTE_FC_H + 1, PASO_H))
-
+ 
     rows = []
     lon_ecmwf = PUNTO_LON % 360
     client = Client(source=mirror_ok)
-
+ 
     for idx, step in enumerate(steps):
         pct = 12 + int(35 * (idx + 1) / len(steps))
         stage(job_id, pct, f"Descargando ECMWF step {step}h...")
-
+ 
         grib = ECMWF_CACHE_DIR / f"ecmwf_{fecha_run}_{hora_run}_step{step:03d}.grib2"
         if not grib.exists() or grib.stat().st_size < 100_000:
-            client.retrieve(
-                date=int(fecha_run),
-                time=int(hora_run),
-                step=step,
-                stream="oper",
-                type="fc",
-                param=["msl", "10u", "10v"],
-                target=str(grib),
-            )
-
+            _ecmwf_retrieve_con_backoff(client, {
+                "date": int(fecha_run),
+                "time": int(hora_run),
+                "step": step,
+                "stream": "oper",
+                "type": "fc",
+                "param": ["msl", "10u", "10v"],
+                "target": str(grib),
+            })
+            # repartir las peticiones en el tiempo para no martillear S3
+            time.sleep(1.5)
+ 
         ds = xr.open_dataset(grib, engine="cfgrib", backend_kwargs={"indexpath": ""})
         p = ds.sel(latitude=PUNTO_LAT, longitude=lon_ecmwf, method="nearest")
         
@@ -166,21 +201,21 @@ def descargar_ecmwf(job_id):
         })
     df = pd.DataFrame(rows).sort_values("time").drop_duplicates("time").reset_index(drop=True)
     df["wind_speed"] = np.sqrt(df.u10**2 + df.v10**2)
-
+ 
     out = PROCESSED_DIR / "forcing_ecmwf_ultimo.csv"
     df.to_csv(out, index=False)
     return df
-
-
+ 
+ 
 # ----------------- MODELO METEOROLÓGICO -----------------
 def calcular_modelo_meteo(job_id, df3):
     stage(job_id, 52, "Interpolando presión y viento a paso horario...")
-
+ 
     df3 = df3.sort_values("time").reset_index(drop=True)
     t_start = df3.time.iloc[0]
     t_end = df3.time.iloc[-1]
     t_h = pd.date_range(start=t_start, end=t_end, freq="1h")
-
+ 
     if PchipInterpolator is not None and len(df3) >= 3:
         t_sec_3 = (df3.time - t_start).dt.total_seconds().values
         t_sec_1 = (t_h - t_start).total_seconds().values
@@ -193,68 +228,68 @@ def calcular_modelo_meteo(job_id, df3):
     else:
         tmp = df3.set_index("time")[["msl_hPa", "u10", "v10"]]
         df = tmp.reindex(t_h).interpolate(method="time").reset_index().rename(columns={"index": "time"})
-
+ 
     stage(job_id, 60, "Calculando marea meteorológica η_met...")
-
+ 
     df["wind_speed"] = np.sqrt(df.u10**2 + df.v10**2)
     df["eta_IB"] = -0.00995 * K_IB * (df["msl_hPa"] - P_REF)
     df["eta_wind"] = A_U * df.u10 * np.abs(df.u10) + A_V * df.v10 * np.abs(df.v10)
     df["eta_inst"] = df["eta_IB"] + df["eta_wind"]
-
+ 
     eta = np.zeros(len(df))
     eta[0] = df["eta_inst"].iloc[0]
     for i in range(1, len(df)):
         eta[i] = ALPHA * eta[i - 1] + (1 - ALPHA) * df["eta_inst"].iloc[i]
     df["eta_met"] = eta
-
+ 
     for c in ["eta_IB", "eta_wind", "eta_inst", "eta_met"]:
         df[c + "_cm"] = df[c] * 100
-
+ 
     return df
-
-
+ 
+ 
 # ----------------- ASTRONÓMICA -----------------
 def leer_astro(job_id):
     stage(job_id, 68, "Leyendo CSV de marea astronómica...")
-
+ 
     if not ASTRO_PATH.exists():
         raise FileNotFoundError(f"No existe {ASTRO_PATH}")
-
+ 
     raw = pd.read_csv(ASTRO_PATH)
     if raw.shape[1] < 2:
         raise RuntimeError("El CSV de astronómica debe tener al menos 2 columnas: fecha y valor.")
-
+ 
     col_time = raw.columns[0]
     col_val = raw.columns[1]
-
+ 
     # Intenta el formato del script original y si no, parseo flexible.
     try:
         times = pd.to_datetime(raw[col_time], format="%d-%b-%Y %H:%M:%S")
     except Exception:
         times = pd.to_datetime(raw[col_time], errors="coerce", dayfirst=True)
-
+ 
     vals = pd.to_numeric(raw[col_val], errors="coerce")
-
+ 
     df = pd.DataFrame({
         "time": times,
         "astro_m": vals,
     }).dropna()
-
+ 
     df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(None)
     df = df.sort_values("time").drop_duplicates("time").reset_index(drop=True)
     df["astro_cm"] = df["astro_m"] * 100
     return df
-
-
+ 
+ 
 # ----------------- PORTUS -----------------
 def cargar_mareografo(job_id, fecha_fin, n_dias=3):
     stage(job_id, 76, "Descargando mareógrafo PORTUS Palma 3851...")
-
+ 
     fecha_ini = fecha_fin - timedelta(days=n_dias - 1)
     t_from = fecha_ini.strftime("%Y%m%d") + "@0000"
     t_to = fecha_fin.strftime("%Y%m%d") + "@2300"
     cache = PORTUS_CACHE_DIR / f"portus_3851_{t_from}_{t_to}.json"
-
+ 
     if cache.exists() and (time.time() - cache.stat().st_mtime) < 3600:
         data = json.loads(cache.read_text(encoding="utf-8"))
     else:
@@ -266,18 +301,18 @@ def cargar_mareografo(job_id, fecha_fin, n_dias=3):
         r.raise_for_status()
         data = r.json()
         cache.write_text(json.dumps(data), encoding="utf-8")
-
+ 
     if not data:
         return pd.DataFrame(columns=["time", "sealevel_m", "sealevel_cm", "residual_m", "residual_cm"])
-
+ 
     arr = np.asarray(data, dtype=float)
     if arr.ndim != 2 or arr.shape[1] != 3:
         return pd.DataFrame(columns=["time", "sealevel_m", "sealevel_cm", "residual_m", "residual_cm"])
-
+ 
     mm_api = arr[:, 1]
     mm_redmar = mm_api + DATUM_OFFSET_MM
     mm_resid = arr[:, 2]
-
+ 
     df = pd.DataFrame({
         "time": pd.to_datetime(arr[:, 0], unit="s", utc=True).tz_localize(None),
         "sealevel_m": mm_redmar / 1000.0,
@@ -287,19 +322,19 @@ def cargar_mareografo(job_id, fecha_fin, n_dias=3):
     })
     df = df[np.isfinite(df["sealevel_cm"])]
     return df.sort_values("time").drop_duplicates("time").reset_index(drop=True)
-
-
+ 
+ 
 # ----------------- UNIÓN Y RESUMEN -----------------
 def combinar(job_id, df_meteo, df_astro, df_mareo):
     stage(job_id, 84, "Combinando meteo + astronómica...")
-
+ 
     df = df_meteo.merge(df_astro, on="time", how="inner").sort_values("time").reset_index(drop=True)
     if df.empty:
         raise RuntimeError("No hay solape temporal entre ECMWF horario y el CSV astronómico.")
-
+ 
     ahora = utc_now_floor()
     inicio_hist = ahora - timedelta(days=N_DIAS_HISTORICO)
-
+ 
     df = df[df.time >= inicio_hist].reset_index(drop=True)
     df["fuente"] = np.where(df["time"] <= ahora, "historico", "forecast")
     df["total_m"] = df["eta_met"] + df["astro_m"]
@@ -312,15 +347,15 @@ def combinar(job_id, df_meteo, df_astro, df_mareo):
     
     df["residuo_m"] = df["eta_met"]
     df["residuo_cm"] = df["eta_met_cm"]
-
+ 
     csv_out = PROCESSED_DIR / "nivel_total_ultimo.csv"
     df.to_csv(csv_out, index=False)
-
+ 
     stage(job_id, 92, "Preparando gráfico y tabla...")
-
+ 
     now_row = df.iloc[(df.time - ahora).abs().argsort()[:1]]
     current = now_row.iloc[0] if len(now_row) else df.iloc[0]
-
+ 
     # extremos simples próximos
     dd = df.copy()
     dd["d"] = dd["total_cm"].diff()
@@ -331,15 +366,15 @@ def combinar(job_id, df_meteo, df_astro, df_mareo):
             highs.append(dd.iloc[i])
         if dd.total_cm.iloc[i] <= dd.total_cm.iloc[i-1] and dd.total_cm.iloc[i] <= dd.total_cm.iloc[i+1] and dd.time.iloc[i] >= ahora:
             lows.append(dd.iloc[i])
-
+ 
     next_high = highs[0] if highs else None
     next_low = lows[0] if lows else None
-
+ 
     def clean(v, nd=1):
         if pd.isna(v) or not np.isfinite(v):
             return None
         return round(float(v), nd)
-
+ 
     result = {
         "generated_at": datetime.now(LOCAL_TZ).strftime("%d-%m-%Y %H:%M Madrid"),
         "period": {
@@ -383,27 +418,54 @@ def combinar(job_id, df_meteo, df_astro, df_mareo):
         ],
     }
     return result
-
-
+ 
+ 
 def latest_json_path():
     return PROCESSED_DIR / "latest.json"
-
-
+ 
+ 
+# URL del JSON en el repo (rama main). Render lo lee en tiempo de ejecución,
+# así NO hace falta redesplegar cada vez que GitHub Actions actualiza los datos.
+RAW_LATEST_URL = os.getenv(
+    "RAW_LATEST_URL",
+    "https://raw.githubusercontent.com/PaulaTower/Galibo_CanBarbara/main/data/processed/latest.json",
+)
+_LATEST_CACHE = {"data": None, "ts": 0.0}
+_LATEST_CACHE_TTL = int(os.getenv("LATEST_CACHE_TTL", "300"))  # 5 min
+ 
+ 
 def load_latest_result():
+    # 1) cache en memoria para no pedir a GitHub en cada visita
+    if _LATEST_CACHE["data"] is not None and (time.time() - _LATEST_CACHE["ts"]) < _LATEST_CACHE_TTL:
+        return _LATEST_CACHE["data"]
+ 
+    # 2) intentar leer el JSON fresco directamente del repo
+    try:
+        r = requests.get(RAW_LATEST_URL, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        _LATEST_CACHE.update(data=data, ts=time.time())
+        return data
+    except Exception as e:
+        print(f"[latest] No se pudo leer de raw GitHub ({e}); usando fichero local.")
+ 
+    # 3) fallback: fichero local del checkout (puede estar desactualizado)
     path = latest_json_path()
     if not path.exists():
         raise FileNotFoundError(
-            "No existe data/processed/latest.json. "
+            "No se pudo obtener latest.json ni de GitHub ni del disco. "
             "Ejecuta primero la GitHub Action 'Update operational data'."
         )
-    return json.loads(path.read_text(encoding="utf-8"))
-
+    data = json.loads(path.read_text(encoding="utf-8"))
+    _LATEST_CACHE.update(data=data, ts=time.time())
+    return data
+ 
 def with_current_cards(result):
     now = datetime.now(LOCAL_TZ).replace(minute=0, second=0, microsecond=0)
     now_label = now.strftime("%d-%m %Hh")
-
+ 
     times = result["series"]["time"]
-
+ 
     if now_label in times:
         i = times.index(now_label)
     else:
@@ -413,30 +475,30 @@ def with_current_cards(result):
             for t in result["series"].get("iso", [])
         ]
         i = min(range(len(iso_times)), key=lambda k: abs(iso_times[k] - now.replace(tzinfo=None)))
-
+ 
     result["cards"]["total_cm"] = result["series"]["total_cm"][i]
     result["cards"]["astro_cm"] = result["series"]["astro_cm"][i]
     result["cards"]["meteo_cm"] = result["series"]["meteo_cm"][i]
     result["cards"]["galibo_entrada_m"] = result["series"]["galibo_entrada_m"][i]
     result["cards"]["galibo_salida_m"] = result["series"]["galibo_salida_m"][i]
-
+ 
     mareo_times = result["series"].get("mareo_time", [])
     mareo_vals = result["series"].get("mareo_cm", [])
     if now_label in mareo_times:
         result["cards"]["portus_cm"] = mareo_vals[mareo_times.index(now_label)]
-
+ 
     result["cards"]["current_time"] = now_label
     return result
-
-
+ 
+ 
 def save_latest_result(result):
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     latest_json_path().write_text(
         json.dumps(result, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-
-
+ 
+ 
 def limpiar_cache_antigua(max_age_hours=36):
     """
     Borra solo archivos temporales antiguos de caché.
@@ -452,23 +514,23 @@ def limpiar_cache_antigua(max_age_hours=36):
                     f.unlink()
                 except OSError:
                     pass
-
-
+ 
+ 
 def build_operational_dataset(job_id="github-action"):
     """
     Ejecuta el cálculo pesado.
     Esto lo debe llamar GitHub Actions cada 3 horas, no Render por cada visita.
     """
     set_job(job_id, status="running", progress=2, message="Arrancando cálculo operativo...")
-
+ 
     df_ecmwf = descargar_ecmwf(job_id)
     df_meteo = calcular_modelo_meteo(job_id, df_ecmwf)
     df_astro = leer_astro(job_id)
-
+ 
     hoy = datetime.now(LOCAL_TZ).replace(
         hour=0, minute=0, second=0, microsecond=0, tzinfo=None
     )
-
+ 
     try:
         df_mareo = cargar_mareografo(job_id, hoy, n_dias=3)
     except Exception as e:
@@ -476,14 +538,14 @@ def build_operational_dataset(job_id="github-action"):
         df_mareo = pd.DataFrame(
             columns=["time", "sealevel_m", "sealevel_cm", "residual_m", "residual_cm"]
         )
-
+ 
     result = combinar(job_id, df_meteo, df_astro, df_mareo)
     save_latest_result(result)
     limpiar_cache_antigua(max_age_hours=int(os.getenv("CACHE_MAX_AGE_HOURS", "36")))
     set_job(job_id, status="done", progress=100, message="Listo.", result=result)
     return result
-
-
+ 
+ 
 def run_job(job_id):
     """
     Compatibilidad local/manual: permite regenerar datos si se llama explícitamente.
@@ -494,13 +556,13 @@ def run_job(job_id):
         set_job(job_id, status="done", progress=100, message="Listo.", result=result)
     except Exception as e:
         set_job(job_id, status="error", progress=100, message=str(e), error=str(e))
-
-
+ 
+ 
 @app.route("/")
 def index():
     return render_template("index.html")
-
-
+ 
+ 
 @app.route("/api/start", methods=["POST"])
 def api_start():
     """
@@ -514,28 +576,28 @@ def api_start():
     except Exception as e:
         set_job(job_id, status="error", progress=100, message=str(e), error=str(e))
     return jsonify({"job_id": job_id})
-
-
+ 
+ 
 @app.route("/api/latest")
 def api_latest():
     try:
         return jsonify(with_current_cards(load_latest_result()))
     except Exception as e:
         return jsonify({"error": str(e)}), 503
-
-
+ 
+ 
 @app.route("/api/status/<job_id>")
 def api_status(job_id):
     job = get_job(job_id)
     if not job:
         return jsonify({"status": "missing", "message": "Trabajo no encontrado."}), 404
     return jsonify(job)
-
-
+ 
+ 
 @app.route("/api/health")
 def health():
     return jsonify({"ok": True})
-
-
+ 
+ 
 if __name__ == "__main__":
     app.run(debug=True, threaded=True)
