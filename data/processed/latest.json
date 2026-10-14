@@ -1,19 +1,19 @@
 {
-  "generated_at": "14-10-2026 16:38 Madrid",
+  "generated_at": "14-10-2026 21:31 Madrid",
   "period": {
     "start": "14-10-2026 00:00",
     "end": "19-10-2026 00:00"
   },
   "cards": {
-    "total_cm": -17.7,
-    "astro_cm": -6.9,
-    "meteo_cm": -10.9,
-    "galibo_entrada_m": 1.66,
-    "galibo_salida_m": 1.651,
-    "next_high_time": "14-10 20h",
-    "next_high_cm": -16.0,
-    "next_low_time": "14-10 16h",
-    "next_low_cm": -17.7
+    "total_cm": -16.4,
+    "astro_cm": -5.6,
+    "meteo_cm": -10.7,
+    "galibo_entrada_m": 1.647,
+    "galibo_salida_m": 1.638,
+    "next_high_time": "15-10 10h",
+    "next_high_cm": -10.1,
+    "next_low_time": "15-10 02h",
+    "next_low_cm": -21.8
   },
   "series": {
     "time": [
@@ -895,11 +895,11 @@
       "historico",
       "historico",
       "historico",
-      "forecast",
-      "forecast",
-      "forecast",
-      "forecast",
-      "forecast",
+      "historico",
+      "historico",
+      "historico",
+      "historico",
+      "historico",
       "forecast",
       "forecast",
       "forecast",
@@ -1052,7 +1052,16 @@
       "14-10 00h",
       "14-10 01h",
       "14-10 02h",
-      "14-10 03h"
+      "14-10 03h",
+      "14-10 04h",
+      "14-10 05h",
+      "14-10 06h",
+      "14-10 07h",
+      "14-10 08h",
+      "14-10 09h",
+      "14-10 10h",
+      "14-10 11h",
+      "14-10 12h"
     ],
     "mareo_cm": [
       -5.9,
@@ -1106,7 +1115,16 @@
       -12.8,
       -13.4,
       -14.4,
-      -14.6
+      -14.6,
+      -13.5,
+      -12.0,
+      -10.0,
+      -7.8,
+      -5.5,
+      -4.6,
+      -5.5,
+      -6.6,
+      -7.8
     ]
   },
   "table": [
@@ -1270,7 +1288,7 @@
       "meteo": -10.8,
       "galibo_entrada": 1.659,
       "galibo_salida": 1.65,
-      "fuente": "forecast"
+      "fuente": "historico"
     },
     {
       "fecha": "14-10 18h",
@@ -1279,7 +1297,7 @@
       "meteo": -10.7,
       "galibo_entrada": 1.653,
       "galibo_salida": 1.644,
-      "fuente": "forecast"
+      "fuente": "historico"
     },
     {
       "fecha": "14-10 19h",
@@ -1288,7 +1306,7 @@
       "meteo": -10.7,
       "galibo_entrada": 1.646,
       "galibo_salida": 1.637,
-      "fuente": "forecast"
+      "fuente": "historico"
     },
     {
       "fecha": "14-10 20h",
@@ -1297,7 +1315,7 @@
       "meteo": -10.7,
       "galibo_entrada": 1.643,
       "galibo_salida": 1.634,
-      "fuente": "forecast"
+      "fuente": "historico"
     },
     {
       "fecha": "14-10 21h",
@@ -1306,7 +1324,7 @@
       "meteo": -10.7,
       "galibo_entrada": 1.647,
       "galibo_salida": 1.638,
-      "fuente": "forecast"
+      "fuente": "historico"
     },
     {
       "fecha": "14-10 22h",
