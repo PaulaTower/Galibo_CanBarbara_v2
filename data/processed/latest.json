@@ -1,15 +1,15 @@
 {
-  "generated_at": "14-10-2026 12:06 Madrid",
+  "generated_at": "14-10-2026 16:38 Madrid",
   "period": {
     "start": "14-10-2026 00:00",
     "end": "19-10-2026 00:00"
   },
   "cards": {
-    "total_cm": -14.1,
-    "astro_cm": -2.8,
-    "meteo_cm": -11.3,
-    "galibo_entrada_m": 1.624,
-    "galibo_salida_m": 1.615,
+    "total_cm": -17.7,
+    "astro_cm": -6.9,
+    "meteo_cm": -10.9,
+    "galibo_entrada_m": 1.66,
+    "galibo_salida_m": 1.651,
     "next_high_time": "14-10 20h",
     "next_high_cm": -16.0,
     "next_low_time": "14-10 16h",
@@ -891,10 +891,10 @@
       "historico",
       "historico",
       "historico",
-      "forecast",
-      "forecast",
-      "forecast",
-      "forecast",
+      "historico",
+      "historico",
+      "historico",
+      "historico",
       "forecast",
       "forecast",
       "forecast",
@@ -1049,7 +1049,10 @@
       "13-10 21h",
       "13-10 22h",
       "13-10 23h",
-      "14-10 00h"
+      "14-10 00h",
+      "14-10 01h",
+      "14-10 02h",
+      "14-10 03h"
     ],
     "mareo_cm": [
       -5.9,
@@ -1100,7 +1103,10 @@
       -6.8,
       -8.8,
       -11.3,
-      -12.8
+      -12.8,
+      -13.4,
+      -14.4,
+      -14.6
     ]
   },
   "table": [
@@ -1228,7 +1234,7 @@
       "meteo": -11.2,
       "galibo_entrada": 1.636,
       "galibo_salida": 1.627,
-      "fuente": "forecast"
+      "fuente": "historico"
     },
     {
       "fecha": "14-10 14h",
@@ -1237,7 +1243,7 @@
       "meteo": -11.1,
       "galibo_entrada": 1.647,
       "galibo_salida": 1.638,
-      "fuente": "forecast"
+      "fuente": "historico"
     },
     {
       "fecha": "14-10 15h",
@@ -1246,7 +1252,7 @@
       "meteo": -11.0,
       "galibo_entrada": 1.656,
       "galibo_salida": 1.647,
-      "fuente": "forecast"
+      "fuente": "historico"
     },
     {
       "fecha": "14-10 16h",
@@ -1255,7 +1261,7 @@
       "meteo": -10.9,
       "galibo_entrada": 1.66,
       "galibo_salida": 1.651,
-      "fuente": "forecast"
+      "fuente": "historico"
     },
     {
       "fecha": "14-10 17h",
